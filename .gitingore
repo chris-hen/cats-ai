@@ -1,0 +1,15 @@
+# Python
+__pycache__/
+*.pyc
+
+# Virtual environments
+.venv/
+venv/
+
+# Data
+data/games/
+results/raw/
+
+# OS
+.DS_Store
+Thumbs.db
