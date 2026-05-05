@@ -13,3 +13,9 @@ This project explores strategies for the bluff-based card game "Schrödinger's C
 ## Status
 
 Work in progress – next step: neural networks
+
+## Results
+
+BayesianBot achieves over 90% winrate against RandomBots in 4-player matches.
+
+Self-play tuning shows optimal doubt threshold around 0.34.
