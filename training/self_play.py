@@ -1,6 +1,9 @@
 from cats.env import CatsEnv
 from bots.random_bot import RandomBot
-from bots.bayesian_bot import BayesianHeuristicBot
+from bots.bayesian_v1 import BayesianV1Bot
+from bots.bayesian_v2 import BayesianV2Bot
+from bots.bayesian_v3 import BayesianV3Bot
+from bots.bayesian_opponent import BayesianOpponentBot
 from training.encode import encode_observation, encode_action
 
 
@@ -79,6 +82,6 @@ def play_many_games(num_games=100, num_players=4, bot_factory=RandomBot, verbose
 def play_bayesian_game(num_players=4, verbose=False):
     return play_one_game(
         num_players=num_players,
-        bot_factory=BayesianHeuristicBot,
+        bot_factory=BayesianV2Bot,
         verbose=verbose,
     )

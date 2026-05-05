@@ -2,7 +2,7 @@ import math
 import random
 
 from cats.actions import MakeClaimAction, DoubtAction, UsePhysicatAction
-from cats.rules import legal_actions, claim_rank
+from cats.rules import legal_actions
 from cats.cards import CAT_TYPES
 
 
@@ -31,10 +31,8 @@ def subtract_counts(a, b):
 def hypergeom_at_least(population_size, success_count, draws, needed_successes):
     if needed_successes <= 0:
         return 1.0
-
     if draws <= 0:
         return 0.0
-
     if success_count <= 0:
         return 0.0
 
@@ -58,33 +56,18 @@ def hypergeom_at_least(population_size, success_count, draws, needed_successes):
     return prob
 
 
-class BayesianHeuristicBot:
+class BayesianBaseBot:
     """
-    Erste starke Baseline.
+    Gemeinsame Bayesian-Basis.
 
-    Idee:
-    - Schätzt P(aktueller Claim ist wahr)
-    - Doubtet, wenn Claim wahrscheinlich falsch ist
-    - Sonst wählt er einen legalen Claim mit guter Balance aus:
-      Wahrscheinlichkeit, Rangfortschritt, Proof-Kosten, Swap-Kosten
+    Enthält:
+    - Claim-Wahrscheinlichkeiten
+    - Hidden-card Modell
+    - Action-Auswahl
+    - Cache
     """
 
-    def __init__(
-        self,
-        doubt_threshold=0.42,
-        claim_confidence_weight=3.0,
-        claim_rank_weight=0.025,
-        proof_penalty=0.08,
-        swap_penalty=0.04,
-        physicat_bonus=0.15,
-        random_noise=0.01,
-    ):
-        self.doubt_threshold = doubt_threshold
-        self.claim_confidence_weight = claim_confidence_weight
-        self.claim_rank_weight = claim_rank_weight
-        self.proof_penalty = proof_penalty
-        self.swap_penalty = swap_penalty
-        self.physicat_bonus = physicat_bonus
+    def __init__(self, random_noise=0.01):
         self.random_noise = random_noise
 
     def choose_action(self, state):
@@ -94,12 +77,8 @@ class BayesianHeuristicBot:
             raise RuntimeError("No legal actions available")
 
         player_id = state.current_player
-
-        # Cache für Claim-Wahrscheinlichkeiten pro Zug
         self._prob_cache = {}
 
-        # Begrenze kombinatorische Explosion:
-        # Pro Claim behalten wir nur die beste Proof/Swap-Variante.
         best_by_key = {}
 
         for action in actions:
@@ -128,35 +107,28 @@ class BayesianHeuristicBot:
         player = state.players[player_id]
 
         known = []
-
-        # Eigene Hand kennt man.
         known.extend(player.hand)
 
-        # Alle offenen Proofs sind bekannt.
         for p in state.active_players():
             known.extend(p.proofs)
 
-        # Eigener bekannter Discard, z. B. durch eigene Swaps oder Sally.
         known.extend(player.known_discard)
 
         return known
 
     def known_support_in_play(self, state, player_id, cat_type):
         count = 0
-
-        # Eigene Hand zählt sicher.
         player = state.players[player_id]
+
         for card in player.hand:
             if card.supports_claim(cat_type, state.heisenbergs_count):
                 count += 1
 
-        # Offene Proofs zählen sicher.
         for p in state.active_players():
             for card in p.proofs:
                 if card.supports_claim(cat_type, state.heisenbergs_count):
                     count += 1
 
-            # Physicat-Proofs sind keine Karten, zählen aber für den Claim.
             count += p.physicat_proofs.get(cat_type, 0)
 
         return count
@@ -181,12 +153,13 @@ class BayesianHeuristicBot:
             return self._prob_cache[cache_key]
 
         known_support = self.known_support_in_play(state, player_id, cat_type)
-
         needed_from_hidden = amount - known_support
+
         if needed_from_hidden <= 0:
             result = 1.0
         else:
             hidden_cards_in_play = 0
+
             for p in state.active_players():
                 if p.player_id != player_id:
                     hidden_cards_in_play += len(p.hand)
@@ -225,75 +198,11 @@ class BayesianHeuristicBot:
 
         return -999.0
 
-    def score_doubt(self, state, player_id):
-        claim = state.current_claim
-
-        if claim is None:
-            return -999.0
-
-        p_true = self.claim_truth_probability(
-            state,
-            player_id,
-            claim.amount,
-            claim.cat_type,
-        )
-
-        p_false = 1.0 - p_true
-
-        # Je klarer p_false über der Schwelle liegt, desto besser Doubt.
-        return (p_false - self.doubt_threshold) * 4.0
-
     def score_claim(self, state, player_id, action):
-        p_true = self.claim_truth_probability(
-            state,
-            player_id,
-            action.amount,
-            action.cat_type,
-        )
+        raise NotImplementedError
 
-        rank = claim_rank(action.amount, action.cat_type)
-
-        score = 0.0
-
-        # Claims sollen wahrscheinlich genug sein.
-        score += self.claim_confidence_weight * p_true
-
-        # Aber nicht zu passiv: höhere Claims bekommen leichten Bonus.
-        score += self.claim_rank_weight * rank
-
-        # Proofs geben Information preis.
-        score -= self.proof_penalty * len(action.proof_indices)
-
-        # Swaps sind nützlich, aber unsicher.
-        score -= self.swap_penalty * len(action.swap_indices)
-
-        # Sehr unwahrscheinliche Claims stark bestrafen.
-        if p_true < 0.25:
-            score -= 2.0
-
-        return score
+    def score_doubt(self, state, player_id):
+        raise NotImplementedError
 
     def score_physicat(self, state, player_id, action):
-        player = state.players[player_id]
-        physicat = player.physicat
-
-        if physicat is None:
-            return -999.0
-
-        t = physicat.physicat_type
-
-        # Einfache erste Heuristik.
-        bonuses = {
-            "newton": 0.45,
-            "albert": 0.25,
-            "sally": 0.20,
-            "cecilia": 0.30,
-            "maria": 0.25,
-            "richard": 0.20,
-            "marie": 0.15,
-            "michael": 0.15,
-            "stephen": 0.10,
-            "neil": 0.25,
-        }
-
-        return self.physicat_bonus + bonuses.get(t, 0.0)
+        raise NotImplementedError
