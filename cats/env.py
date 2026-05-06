@@ -284,11 +284,7 @@ class CatsEnv:
                 raise ValueError("Neil cannot copy Neil")
 
             player.physicat_used = True
-
-            if physicat.physicat_type in ["cecilia", "maria", "richard"]:
-                player.round_physicats.append(physicat)
-            else:
-                self.state.face_up_physicats.append(physicat)
+            self.state.face_up_physicats.append(physicat)
 
             effect = self._apply_physicat_effect(copied_physicat, player_id)
 
